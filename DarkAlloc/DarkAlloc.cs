@@ -11,6 +11,8 @@ namespace DarkAlloc
         static IntPtr heap = Marshal.AllocHGlobal(1024 * 1024 * 8);
         static int nextFreeIndex = 0;
 
+        public static IntPtr HeapStart = heap;
+
         /// Also known as UnsafeAccursedUnutterableDarkAlloc<T>
         /// Alloc<T>(...) is like new T(...) but on an entirely unmanaged, non-GC'd heap.
         /// This solution was inspired by the answer at < http://stackoverflow.com/a/13826828 >, but is modified and extended.
@@ -26,7 +28,7 @@ namespace DarkAlloc
             IntPtr ptr = heap + nextFreeIndex;
             nextFreeIndex += size;
 
-            Console.WriteLine("Size of {0} = {1}", type.Name, size);
+            //Console.WriteLine("Size of {0} = {1}", type.Name, size);
 
             // Zero the memory
             byte[] zeroes = new byte[size];
@@ -35,16 +37,8 @@ namespace DarkAlloc
             // Write type info pointer
             Marshal.WriteIntPtr(ptr + 4, typeInfoPtr);
 
-            // Generate some MSIL to return
-            DynamicMethod m = new DynamicMethod("_Construct", typeof(T), new[] { typeof(IntPtr) }, typeof(DarkAlloc), true);
-            var il = m.GetILGenerator();
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Ret);
-
-            var new_ = m.CreateDelegate(typeof(Func<IntPtr, T>)) as Func<IntPtr, T>;
-
             // Construct the object
-            T obj = new_(ptr + 4);
+            T obj = FromPtr<T>(ptr);
 
             // Get the types of constructor arguments
             Type[] argTypes = new Type[args.Length];
@@ -63,6 +57,20 @@ namespace DarkAlloc
                 ctor.Invoke(obj, args);
 
             return obj;
+        }
+
+        public static unsafe T FromPtr<T>(IntPtr ptr) where T : class
+        {
+            // Generate some MSIL to return the object reference
+            DynamicMethod m = new DynamicMethod("_Construct", typeof(T), new[] { typeof(IntPtr) }, typeof(DarkAlloc), true);
+            var il = m.GetILGenerator();
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ret);
+
+            var new_ = m.CreateDelegate(typeof(Func<IntPtr, T>)) as Func<IntPtr, T>;
+
+            // Construct the object
+            return new_(ptr + 4);
         }
     }
 }
